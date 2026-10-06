@@ -2,7 +2,7 @@
 
 import { useState, type ReactNode } from "react";
 import { downloadReportPdf } from "@/lib/reportPdf";
-import { PROVIDERS, type Provider } from "@/lib/providers";
+import type { Provider } from "@/lib/providers";
 import type { CoachMeta } from "@/lib/types";
 
 type CoachResponse = {
@@ -74,8 +74,16 @@ function Markdown({ text }: { text: string }) {
   return <>{out}</>;
 }
 
-export function CoachingPanel({ champion = null }: { champion?: string | null }) {
-  const [provider, setProvider] = useState<Provider>("groq");
+type ProviderOption = { id: Provider; label: string };
+
+export function CoachingPanel({
+  champion = null,
+  providerOptions,
+}: {
+  champion?: string | null;
+  providerOptions: ProviderOption[];
+}) {
+  const [provider, setProvider] = useState<Provider>(providerOptions[0]?.id ?? "groq");
   const [loading, setLoading] = useState(false);
   const [report, setReport] = useState<string | null>(null);
   const [model, setModel] = useState<string | null>(null);
@@ -116,7 +124,7 @@ export function CoachingPanel({ champion = null }: { champion?: string | null })
           disabled={loading}
           className="rounded border border-line bg-surface px-2 py-2 text-sm text-fg disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {PROVIDERS.map((p) => (
+          {providerOptions.map((p) => (
             <option key={p.id} value={p.id}>
               {p.label}
             </option>

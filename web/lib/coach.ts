@@ -45,7 +45,7 @@ function getProviderConfig(provider: Provider): ProviderConfig {
         "https://generativelanguage.googleapis.com/v1beta/openai/",
       apiKey: process.env.LLM_GEMINI_API_KEY,
       apiKeyEnvVar: "LLM_GEMINI_API_KEY",
-      model: process.env.LLM_GEMINI_MODEL ?? "gemini-3.5-flash",
+      model: process.env.LLM_GEMINI_MODEL ?? "gemini-3.8-flash",
       reasoningEffort: parseReasoningEffort(process.env.LLM_GEMINI_REASONING_EFFORT),
     };
   }
@@ -56,6 +56,11 @@ function getProviderConfig(provider: Provider): ProviderConfig {
     model: process.env.LLM_GROQ_MODEL ?? "openai/gpt-oss-120b",
     reasoningEffort: parseReasoningEffort(process.env.LLM_GROQ_REASONING_EFFORT),
   };
+}
+
+/** Modelo efectivo de un proveedor (env var si está seteada, si no el default). Usado por el selector del dashboard para que el label nunca se desincronice del modelo que realmente se llama. */
+export function getProviderModel(provider: Provider): string {
+  return getProviderConfig(provider).model;
 }
 
 export type CoachInput = {

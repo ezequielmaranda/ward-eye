@@ -1,6 +1,13 @@
 export type Provider = "groq" | "gemini";
 
-export const PROVIDERS: { id: Provider; label: string }[] = [
-  { id: "groq", label: "Groq · gpt-oss-120b" },
-  { id: "gemini", label: "Google AI Studio · Gemini 3.6 Flash" },
-];
+export const PROVIDER_IDS: Provider[] = ["groq", "gemini"];
+
+const PROVIDER_NAMES: Record<Provider, string> = {
+  groq: "Groq",
+  gemini: "Google AI Studio",
+};
+
+/** Nombre fijo del proveedor (sin el modelo, que depende del env — ver lib/coach.ts). */
+export function providerName(id: Provider): string {
+  return PROVIDER_NAMES[id];
+}

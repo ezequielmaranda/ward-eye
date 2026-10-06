@@ -3,6 +3,8 @@ import { Card } from "@/components/Card";
 import { Kpis } from "@/components/Kpis";
 import { MatchesTable } from "@/components/MatchesTable";
 import { CoachingPanel } from "@/components/CoachingPanel";
+import { getProviderModel } from "@/lib/coach";
+import { PROVIDER_IDS, providerName } from "@/lib/providers";
 import { ChampionPicker } from "@/components/ChampionPicker";
 import TrendsChart from "@/components/charts/TrendsChart";
 import TrendsResourcesChart from "@/components/charts/TrendsResourcesChart";
@@ -88,7 +90,14 @@ export default async function Home({
             title="Coaching"
             subtitle="Análisis de tus partidas recientes vía LLM (OpenAI-compatible)"
           >
-            <CoachingPanel key={champion ?? "all"} champion={champion} />
+            <CoachingPanel
+              key={champion ?? "all"}
+              champion={champion}
+              providerOptions={PROVIDER_IDS.map((id) => ({
+                id,
+                label: `${providerName(id)} · ${getProviderModel(id)}`,
+              }))}
+            />
           </Card>
         </div>
 

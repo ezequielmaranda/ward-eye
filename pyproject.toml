@@ -9,6 +9,7 @@ dependencies = [
     "dbt-duckdb>=1.8.0",
     "dlt[duckdb]>=0.5.0",
     "duckdb>=1.0.0",
+    "pandas>=3.0.6",
     "prefect>=3.0.0",
     "psutil>=7.2.2",
     "python-dotenv>=1.0.0",
