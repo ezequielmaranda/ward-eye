@@ -9,6 +9,7 @@ import type {
   MatchPerformance,
   ObjectiveControl,
   PlayerTrend,
+  RankContext,
   Summary,
 } from "./types";
 
@@ -297,6 +298,53 @@ async function queryObjectives(
   );
 }
 
+/**
+ * Contexto de rango de las últimas N partidas que tienen snapshot. Cobertura
+ * parcial: el histórico previo a la ingesta de rangos no existe, así que puede
+ * devolver menos filas que las otras queries (o ninguna).
+ */
+async function queryRankContext(
+  run: Run,
+  limit = 30,
+  champion?: string | null,
+): Promise<RankContext[]> {
+  const where = champion ? "where r.my_champion = ?" : "";
+  const params = champion ? [champion, limit] : [limit];
+  return run<RankContext>(
+    `
+    select
+      r.match_id,
+      r.win,
+      m.game_start_at::text                 as game_start_at,
+      r.my_champion,
+      r.team_position,
+      r.my_tier,
+      r.my_division,
+      r.my_lp::int                          as my_lp,
+      r.my_rank_score::int                  as my_rank_score,
+      r.opponent_champion,
+      r.opponent_tier,
+      r.opponent_division,
+      r.opponent_lp::int                    as opponent_lp,
+      r.opponent_rank_gap::int              as opponent_rank_gap,
+      r.opponent_is_smurf_suspect,
+      r.ally_avg_score::int                 as ally_avg_score,
+      r.enemy_avg_score::int                as enemy_avg_score,
+      r.team_rank_gap::int                  as team_rank_gap,
+      r.ally_smurf_suspects::int            as ally_smurf_suspects,
+      r.enemy_smurf_suspects::int           as enemy_smurf_suspects,
+      r.lobby_rank_gap::int                 as lobby_rank_gap,
+      r.lobby_difficulty
+    from ${MARTS}.mart_match_rank_context r
+    left join ${MARTS}.mart_match_performance m using (match_id)
+    ${where}
+    order by m.game_start_at desc nulls last
+    limit ?
+  `,
+    params,
+  );
+}
+
 /** Lista de todos los campeones jugados (todas las colas), para el picker. */
 async function queryChampionList(run: Run): Promise<ChampionOption[]> {
   return run<ChampionOption>(`
@@ -377,19 +425,39 @@ export async function getCoachingData(championFilter?: string | null): Promise<{
   jungleMatchup: JungleMatchup[];
   objectives: ObjectiveControl[];
   trends: PlayerTrend[];
+  rankContext: RankContext[];
 }> {
   const champion = normalizeChampion(championFilter);
   return withRun(async (run) => {
-    const [summary, matches, champions, earlyGame, jungleMatchup, objectives, trends] =
-      await Promise.all([
-        querySummary(run, champion),
-        queryMatchPerformance(run, 20, champion),
-        queryChampionStats(run, 10, champion),
-        queryEarlyGame(run, 20, champion),
-        queryJungleMatchup(run, 20, champion),
-        queryObjectives(run, 20, champion),
-        queryPlayerTrends(run, champion),
-      ]);
-    return { summary, matches, champions, earlyGame, jungleMatchup, objectives, trends };
+    const [
+      summary,
+      matches,
+      champions,
+      earlyGame,
+      jungleMatchup,
+      objectives,
+      trends,
+      rankContext,
+    ] = await Promise.all([
+      querySummary(run, champion),
+      queryMatchPerformance(run, 20, champion),
+      queryChampionStats(run, 10, champion),
+      queryEarlyGame(run, 20, champion),
+      queryJungleMatchup(run, 20, champion),
+      queryObjectives(run, 20, champion),
+      queryPlayerTrends(run, champion),
+      // Mismo horizonte que las demás: el contexto es de las partidas analizadas.
+      queryRankContext(run, 20, champion),
+    ]);
+    return {
+      summary,
+      matches,
+      champions,
+      earlyGame,
+      jungleMatchup,
+      objectives,
+      trends,
+      rankContext,
+    };
   });
 }

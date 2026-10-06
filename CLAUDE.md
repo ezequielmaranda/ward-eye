@@ -137,7 +137,7 @@ Un archivo `.duckdb` admite **un solo proceso escritor** a la vez; varios lector
 - dbt y dlt comparten el mismo archivo vía `DUCKDB_PATH` (el flow pasa la ruta absoluta al subprocess de dbt).
 
 ### Schemas en DuckDB (archivo único `warddata.duckdb`)
-- `lol_raw.*` — tablas raw (dlt): `raw_matches`, `raw_participants`, `raw_timeline_frames`, `raw_timeline_events`, `raw_summoners`
+- `lol_raw.*` — tablas raw (dlt): `raw_matches`, `raw_participants`, `raw_timeline_frames`, `raw_timeline_events`, `raw_summoners`, `raw_player_rank_snapshots`
 - `lol_staging.*` — vistas (dbt staging): limpian y calculan métricas derivadas (cs/min, vision/min, damage/min)
 - `lol_intermediate.*` — tablas (dbt intermediate): `int_frame_snapshots`
 - `lol_marts.*` — tablas materializadas (dbt marts): `mart_match_performance`, `mart_champion_stats`, `mart_early_game`, `mart_player_trends`, `mart_jungle_matchup`
@@ -177,6 +177,24 @@ es relativo. Estos dos son la excepción:
 
 Ambos alimentan el dashboard y el prompt de coaching (ver "Coaching (web)").
 
+### Rango de los 10 jugadores (`raw_player_rank_snapshots`)
+
+La API solo da el rango **actual**, así que dlt lo snapshotea al ingestar cada
+partida nueva (`player_rank_snapshots_resource`) y saltea las que terminaron
+hace más de `RANK_SNAPSHOT_MAX_LAG_HOURS=36`: el rango de hoy no describe una
+partida vieja. **Consecuencia: el histórico previo no existe ni se puede
+completar**; la cobertura crece a medida que se juega.
+
+- `stg_player_rank_snapshots` corrige wins/losses a "antes de la partida",
+  restando esa partida y las SoloQ posteriores que comparten snapshot (dlt pide
+  un snapshot por jugador por corrida). Tier/división/LP **no** se pueden
+  retroceder: quedan post-partida. Filtrá por `snapshot_is_reliable`.
+- `mart_match_rank_context` — una fila por partida con snapshot: rango propio,
+  del rival directo (misma posición) y promedio de cada equipo como
+  `rank_score` lineal (400/tier, 100/división, + LP), sus diferencias
+  (`*_gap` positivo = el rival era más alto), `lobby_difficulty` (±150) y una
+  heurística gruesa de smurf (`games_before < 60` y winrate ≥ 65%).
+
 ### `lane_minions_first_10min` no es un ratio
 
 Se llamaba `cs_per_minute` en raw, lo que invitaba a leerla como un ratio y a
@@ -193,7 +211,7 @@ El coaching se implementó como **dashboard Next.js en `web/`** (no como `coachi
 - **Datos**: server-side, lee los marts (`lol_marts.*`) del archivo DuckDB en `READ_ONLY` por request (`web/lib/db.ts`, `web/lib/queries.ts`). El acceso nunca llega al cliente (`server-only`).
 - **Gráficos**: Apache ECharts vía wrapper propio `web/components/EChart.tsx` (sin `echarts-for-react` por peer-deps con React 19).
 - **Coaching on-demand**: selector de proveedor + botón → `POST /api/coaching` con `{ provider: "groq" | "gemini" }` → `web/lib/coach.ts`. Usa el SDK `openai` contra el endpoint **OpenAI-compatible** del proveedor elegido, configurable por env (`LLM_GROQ_*` / `LLM_GEMINI_*`, ver más arriba). Default Groq free tier. Agregar un tercer proveedor (ej. Claude, que también expone endpoint OpenAI-compatible) = sumar un caso en `getProviderConfig()` + su entrada en `lib/providers.ts`, o reemplazar `lib/coach.ts` por el SDK nativo del proveedor.
-- El prompt arma bloques: comparación Victorias vs Derrotas, early game, **duelo vs el jungla rival**, **control de objetivos**, tendencia semanal, partidas recientes y campeones; calibrado al rol principal del jugador. El system prompt le indica priorizar el bloque de duelo por sobre las métricas absolutas, y distinguir muertes en duelo de muertes en gank (se corrigen distinto). Devuelve Markdown con secciones fijas (Resumen / Puntos fuertes / Áreas de mejora / Objetivos próxima sesión).
+- El prompt arma bloques: comparación Victorias vs Derrotas, early game, **duelo vs el jungla rival**, **contexto de rango** (por partida; los agregados por dificultad recién con ≥10 partidas con snapshot), **control de objetivos**, tendencia semanal, partidas recientes y campeones; calibrado al rol principal del jugador. El system prompt le indica priorizar el bloque de duelo por sobre las métricas absolutas, y distinguir muertes en duelo de muertes en gank (se corrigen distinto). Devuelve Markdown con secciones fijas (Resumen / Puntos fuertes / Áreas de mejora / Objetivos próxima sesión).
 - Gráficos nuevos: `JungleMatchupChart` (barras diverging del diferencial de campamentos @15, color por signo) y `ObjectivesChart` (barras horizontales, winrate según quién se llevó cada objetivo). Ninguno usa doble eje: dos medidas de escala distinta van a dos gráficos o al tooltip, nunca a un segundo eje y.
 
 > `web/` corre Next.js 16 con su propia copia de docs en `node_modules/next/dist/docs/` (ver `web/AGENTS.md`): tiene breaking changes respecto a versiones previas, leé la guía relevante antes de tocar código del frontend.

@@ -8,6 +8,7 @@ import type {
   MatchPerformance,
   ObjectiveControl,
   PlayerTrend,
+  RankContext,
   Summary,
 } from "./types";
 
@@ -71,6 +72,7 @@ export type CoachInput = {
   jungleMatchup: JungleMatchup[];
   objectives: ObjectiveControl[];
   trends: PlayerTrend[];
+  rankContext: RankContext[];
   champion?: string | null; // filtro de campeón activo, si lo hay
 };
 
@@ -197,6 +199,84 @@ function objectivesBlock(rows: ObjectiveControl[]): string[] {
   ];
 }
 
+// Con menos partidas con snapshot, los agregados de rango son ruido: solo se
+// mandan las líneas por partida.
+const MIN_RANK_SAMPLE = 10;
+
+// ±150 de rank_score (división y media): menos que eso es ruido de LP.
+const RANK_GAP_THRESHOLD = 150;
+
+function rankLabel(tier: string | null, division: string | null, lp: number | null): string {
+  if (!tier) return "sin rango";
+  const div = ["MASTER", "GRANDMASTER", "CHALLENGER"].includes(tier) ? "" : ` ${division ?? ""}`;
+  return `${tier}${div} ${lp ?? 0}LP`;
+}
+
+function signed(n: number | null): string {
+  if (n === null || !Number.isFinite(n)) return "?";
+  return n > 0 ? `+${n}` : `${n}`;
+}
+
+const DIFFICULTY_LABEL = { harder: "más alto", even: "parejo", easier: "más bajo" } as const;
+
+/**
+ * Contexto de rango: el mismo diferencial contra el rival no significa lo mismo
+ * si el rival era de tu nivel o dos divisiones más alto. Cobertura parcial (solo
+ * partidas ingestadas con snapshot), así que se avisa el n explícitamente.
+ */
+function rankContextBlock(
+  rows: RankContext[],
+  jungleMatchup: JungleMatchup[],
+  analyzedGames: number,
+): string[] {
+  const ranked = rows.filter((r) => r.my_rank_score !== null);
+  if (ranked.length === 0) return [];
+
+  const duel = new Map(jungleMatchup.map((j) => [j.match_id, j]));
+  const latest = ranked[0];
+  const opponentGaps = ranked.map((r) => r.opponent_rank_gap ?? NaN);
+  const teamGaps = ranked.map((r) => r.team_rank_gap ?? NaN);
+
+  const lines = [
+    `Contexto de rango (n: ${ranked.length} de ${analyzedGames} partidas analizadas tienen snapshot; escala: 100 = una división, positivo = el rival era más alto que vos):`,
+    `- Tu rango actual: ${rankLabel(latest.my_tier, latest.my_division, latest.my_lp)}`,
+    `- Diferencia promedio vs tu rival directo: ${signed(Math.round(avg(opponentGaps)))} | equipo rival vs tu equipo: ${signed(Math.round(avg(teamGaps)))}`,
+  ];
+
+  if (ranked.length >= MIN_RANK_SAMPLE) {
+    const wr = (subset: RankContext[]) =>
+      subset.length
+        ? `${Math.round((subset.filter((r) => r.win).length / subset.length) * 100)}% (${subset.length}g)`
+        : "sin datos";
+    const gap = (r: RankContext) => r.opponent_rank_gap ?? 0;
+    lines.push(
+      `- Winrate según el rival directo: más alto ${wr(ranked.filter((r) => gap(r) > RANK_GAP_THRESHOLD))} | parejo ${wr(ranked.filter((r) => Math.abs(gap(r)) <= RANK_GAP_THRESHOLD))} | más bajo ${wr(ranked.filter((r) => gap(r) < -RANK_GAP_THRESHOLD))}`,
+    );
+  }
+
+  lines.push("Por partida (más nuevas primero):");
+  for (const r of ranked.slice(0, 10)) {
+    const d = duel.get(r.match_id);
+    const smurfs = [
+      r.opponent_is_smurf_suspect ? "rival directo posible smurf" : null,
+      r.enemy_smurf_suspects > 0 ? `${r.enemy_smurf_suspects} posible(s) smurf en el equipo rival` : null,
+      r.ally_smurf_suspects > 0 ? `${r.ally_smurf_suspects} en tu equipo` : null,
+    ].filter(Boolean);
+    lines.push(
+      [
+        `- ${r.game_start_at?.slice(0, 10) ?? "?"} ${r.win ? "V" : "D"} ${r.my_champion} vs ${r.opponent_champion ?? "?"} (${rankLabel(r.opponent_tier, r.opponent_division, r.opponent_lp)}, ${signed(r.opponent_rank_gap)})`,
+        `equipo rival ${signed(r.team_rank_gap)}`,
+        `lobby ${r.lobby_difficulty ? DIFFICULTY_LABEL[r.lobby_difficulty] : "?"}`,
+        ...(d
+          ? [`campamentos @15 ${signed(d.camp_diff_at_15)}, oro @15 ${signed(d.gold_diff_at_15)}`]
+          : []),
+        ...(smurfs.length ? [`[${smurfs.join("; ")}]`] : []),
+      ].join(" | "),
+    );
+  }
+  return lines;
+}
+
 function trendsBlock(trends: PlayerTrend[]): string[] {
   const rows = dominantQueue(trends).slice(-6); // últimas 6 semanas
   if (rows.length === 0) return ["Tendencia semanal: sin datos."];
@@ -249,6 +329,7 @@ function buildPrompt({
   jungleMatchup,
   objectives,
   trends,
+  rankContext,
   champion,
 }: CoachInput): string {
   const summaryLine = summary
@@ -268,6 +349,7 @@ function buildPrompt({
     ...earlyGameBlock(earlyGame),
     "",
     ...withBlank(jungleMatchupBlock(jungleMatchup)),
+    ...withBlank(rankContextBlock(rankContext, jungleMatchup, matches.length)),
     ...withBlank(objectivesBlock(objectives)),
     ...trendsBlock(trends),
     "",
@@ -292,6 +374,8 @@ Referencias soloQ aproximadas por rol:
 Usá la comparación Victorias vs Derrotas para identificar QUÉ separa tus wins de tus losses: esa es la señal más accionable. Si una métrica es parecida en V y D, no es el problema.
 
 Si hay un bloque "Duelo vs el jungla rival", PRIORIZALO sobre las métricas absolutas. Un CS/min que parece normal puede esconder un déficit grande contra el jungla rival de esa misma partida, y lo que se puede corregir es el diferencial, no el número aislado. Los valores negativos significan que el jugador va por detrás. Distinguí las muertes en duelo (sin asistencias: decisiones propias de pelear) de las muertes en gank (posicionamiento y visión) — se corrigen distinto.
+
+Si hay un bloque "Contexto de rango", usalo para calibrar el diagnóstico, NO para excusar. Un diferencial negativo contra un rival claramente más alto (más de +150, una división y media) es esperable: ahí lo útil es si el jugador minimizó la pérdida (no regalar duelos, jugar por el lado fuerte del mapa). El mismo diferencial contra un rival parejo o más bajo es un problema propio y prioritario. Las marcas de "posible smurf" son una heurística gruesa: mencionalas solo si explican una partida puntual. El bloque cubre solo una parte de las partidas (lo indica el n): no generalices a todo el histórico desde pocas filas.
 
 Si hay un bloque "Control de objetivos", usalo para hablar de prioridades de ruta y tempo, no como una estadística suelta.
 

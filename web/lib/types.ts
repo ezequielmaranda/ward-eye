@@ -101,6 +101,37 @@ export type JungleMatchup = {
   had_early_solo_death: boolean;
 };
 
+/**
+ * Contexto de rango de una partida (`mart_match_rank_context`). Los `*_score`
+ * son rank_score lineal (400/tier, 100/división, + LP); los `*_gap` positivos
+ * significan que el rival / equipo rival / lobby era más alto que yo.
+ * Solo existe para partidas ingestadas con snapshot fresco.
+ */
+export type RankContext = {
+  match_id: string;
+  win: boolean;
+  game_start_at: string | null;
+  my_champion: string;
+  team_position: string | null;
+  my_tier: string | null;
+  my_division: string | null;
+  my_lp: number | null;
+  my_rank_score: number | null;
+  opponent_champion: string | null;
+  opponent_tier: string | null;
+  opponent_division: string | null;
+  opponent_lp: number | null;
+  opponent_rank_gap: number | null;
+  opponent_is_smurf_suspect: boolean;
+  ally_avg_score: number | null;
+  enemy_avg_score: number | null;
+  team_rank_gap: number | null;
+  ally_smurf_suspects: number;
+  enemy_smurf_suspects: number;
+  lobby_rank_gap: number | null;
+  lobby_difficulty: "harder" | "even" | "easier" | null;
+};
+
 /** Objetivos neutrales por bando. `first_*_mine` es null si nunca cayó. */
 export type ObjectiveControl = {
   match_id: string;

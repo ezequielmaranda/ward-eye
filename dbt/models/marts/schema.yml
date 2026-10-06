@@ -32,6 +32,21 @@ models:
       - name: dragon_diff
         tests: [not_null]
 
+  - name: mart_match_rank_context
+    description: >
+      Una fila por partida con snapshot de rango: mi rango, el del rival directo
+      (misma posición) y el promedio de cada equipo, como rank_score lineal
+      (400/tier, 100/división, + LP). Solo partidas ingestadas con snapshot
+      fresco; el histórico previo no existe.
+    columns:
+      - name: match_id
+        tests: [unique, not_null]
+      - name: lobby_difficulty
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['harder', 'even', 'easier']
+
   - name: mart_early_game
     columns:
       - name: match_id
