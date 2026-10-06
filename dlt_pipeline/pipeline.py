@@ -19,6 +19,7 @@ Cómo correr manualmente:
 import logging
 import os
 import sys
+from datetime import datetime, timezone
 
 import dlt
 from dotenv import load_dotenv
@@ -59,6 +60,10 @@ BOOTSTRAP_MATCH_COUNT = 50
 # pendientes, se procesan las más viejas primero y el resto se drena en corridas
 # siguientes (sin pérdida). Acota memoria y consumo de la API por corrida.
 MAX_MATCHES_PER_RUN = 100
+
+# Partidas más viejas que esto no se snapshotean: el rango de hoy ya no dice
+# nada sobre el jugador al momento de la partida (backlog, bootstrap).
+RANK_SNAPSHOT_MAX_LAG_HOURS = 36
 
 
 # ---------------------------------------------------------------------------
@@ -145,6 +150,55 @@ def summoner_resource(client: RiotClient, puuid: str):
     summoner = client.get_summoner_by_puuid(puuid)
     ranked = client.get_ranked_info(puuid)
     yield parse_summoner(summoner, puuid, ranked)
+
+
+@dlt.resource(
+    name="raw_player_rank_snapshots",
+    write_disposition="merge",
+    primary_key=["match_id", "puuid"],
+)
+def player_rank_snapshots_resource(client: RiotClient, match_ids: list[str]):
+    """
+    Rango y W/L de SoloQ de los 10 jugadores de cada partida nueva, tomado al
+    ingestarla. La API no da el rango previo a la partida: el snapshot ya
+    incluye su resultado (se corrige en dbt restando el win/loss) y `lag_hours`
+    dice qué tan viejo es respecto del final de la partida.
+    `client.get_match` está memoizado: no vuelve a pegarle a Match-V5.
+    """
+    cache: dict[str, tuple[dict, datetime]] = {}  # un request por jugador por corrida
+
+    for match_id in match_ids:
+        info = client.get_match(match_id)["info"]
+        match_end_at = datetime.fromtimestamp(info["gameEndTimestamp"] / 1000, tz=timezone.utc)
+        lag_now = (datetime.now(timezone.utc) - match_end_at).total_seconds() / 3600
+        if lag_now > RANK_SNAPSHOT_MAX_LAG_HOURS:
+            logger.info(f"Rank snapshot: salteo {match_id} (terminó hace {lag_now:.0f}h)")
+            continue
+
+        logger.info(f"Rank snapshot: {match_id}")
+        for p in info["participants"]:
+            puuid = p["puuid"]
+            if puuid not in cache:
+                entries = client.get_ranked_info(puuid)
+                solo = next((e for e in entries if e["queueType"] == "RANKED_SOLO_5x5"), {})
+                cache[puuid] = (solo, datetime.now(timezone.utc))
+            solo, fetched_at = cache[puuid]
+            yield {
+                "match_id":     match_id,
+                "puuid":        puuid,
+                "tier":         solo.get("tier"),
+                "rank":         solo.get("rank"),
+                "lp":           solo.get("leaguePoints"),
+                "wins":         solo.get("wins"),
+                "losses":       solo.get("losses"),
+                "hot_streak":   solo.get("hotStreak"),
+                "fresh_blood":  solo.get("freshBlood"),
+                "veteran":      solo.get("veteran"),
+                "inactive":     solo.get("inactive"),
+                "match_end_at": match_end_at,
+                "fetched_at":   fetched_at,
+                "lag_hours":    round((fetched_at - match_end_at).total_seconds() / 3600, 2),
+            }
 
 
 # ---------------------------------------------------------------------------
@@ -271,6 +325,7 @@ def run_pipeline():
             timeline_frames_resource(client, new_ids),
             timeline_events_resource(client, new_ids),
             summoner_resource(client, puuid),
+            player_rank_snapshots_resource(client, new_ids),
         ]
     )
 
