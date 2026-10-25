@@ -27,9 +27,9 @@ Todo es local: no hay servidor de base de datos. El "warehouse" es el archivo
 
 ## 2. Checklist de reenganche
 
-1. **Riot API key**: las keys de desarrollo **vencen cada 24 h**. Si dlt falla
-   con 401/403, renovala en developer.riotgames.com y actualizá `RIOT_API_KEY`
-   en `.env`.
+1. **Riot API key**: se usa una **Personal API Key**, que no vence a diario
+   como la development key. Si dlt falla con 401/403, revisá el estado de la
+   key en developer.riotgames.com y actualizá `RIOT_API_KEY` en `.env`.
 2. **Ponerte al día con datos**: `python -m flows.daily_pipeline` (dlt + dbt
    + tests). Si estuviste mucho tiempo afuera y jugaste más de 100 partidas,
    corrélo varias veces: cada corrida procesa como máximo 100, empezando por las
@@ -238,7 +238,7 @@ cd web && npm install && npm run dev
 ### Variables de entorno (`.env` en la raíz)
 
 ```
-RIOT_API_KEY=RGAPI-...    # vence cada 24 h (dev key)
+RIOT_API_KEY=RGAPI-...    # Personal API Key
 RIOT_REGION=la2           # platform: summoner / league
 RIOT_ROUTING=americas     # routing: account / match-v5
 SUMMONER_NAME=...
@@ -263,7 +263,5 @@ redundantes.
   subestimados).
 - `lane_minions_first_10min` es un **conteo** (0-5 para jungla), no un ratio.
   Antes se llamaba `cs_per_minute`.
-- **La dev key de Riot vence cada 24 h**: para correr desatendido (Pi) hace
-  falta una Personal API Key. Ver [`RASPBERRY.md`](RASPBERRY.md).
 - `mart_player_trends.top_champion` es no determinístico cuando hay empate de
   partidas entre campeones en la semana: puede cambiar entre corridas de dbt.
