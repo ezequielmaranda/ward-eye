@@ -59,8 +59,16 @@ export async function POST(request: Request) {
     const champion: string | null =
       typeof body?.champion === "string" && body.champion.trim() ? body.champion : null;
 
-    const { summary, matches, champions, earlyGame, jungleMatchup, objectives, trends } =
-      await getCoachingData(champion);
+    const {
+      summary,
+      matches,
+      champions,
+      earlyGame,
+      jungleMatchup,
+      objectives,
+      trends,
+      rankContext,
+    } = await getCoachingData(champion);
 
     const result = await generateCoaching(
       {
@@ -71,6 +79,7 @@ export async function POST(request: Request) {
         jungleMatchup,
         objectives,
         trends,
+        rankContext,
         champion,
       },
       provider,

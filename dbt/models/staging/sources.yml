@@ -9,3 +9,4 @@ sources:
       - name: raw_timeline_frames
       - name: raw_timeline_events
       - name: raw_summoners
+      - name: raw_player_rank_snapshots
