@@ -16,18 +16,6 @@ las corridas.
 
 ---
 
-## 0. Antes de empezar: la API key de Riot
-
-**La development key de Riot vence cada 24 h.** En una máquina desatendida
-eso significa que el pipeline falla todos los días salvo el siguiente al que
-la renovaste. Para que corra solo de verdad necesitás una **Personal API
-Key**: registrá un producto personal en developer.riotgames.com. Esa key no
-vence a diario.
-
-Hasta tenerla, la Pi sirve igual, pero vas a tener que actualizar
-`RIOT_API_KEY` en `.env` antes de cada corrida y después hacer
-`sudo systemctl restart ward-eye`, por las dudas.
-
 ## 1. Requisitos
 
 - Raspberry Pi de 64 bits (Pi 4 o 5; con 4 GB de RAM va holgada).
