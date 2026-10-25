@@ -204,6 +204,19 @@ completar**; la cobertura crece a medida que se juega.
   (`*_gap` positivo = el rival era más alto), `lobby_difficulty` (±150) y una
   heurística gruesa de smurf (`games_before < 60` y winrate ≥ 65%).
 
+### `challenges`: blob en raw, tipado en staging
+
+`raw_participants.challenges_json` guarda el objeto `challenges` de Match-V5
+**entero** (~120-135 claves, sin documentación oficial y cambian entre
+versiones). `stg_challenges` extrae y tipa las 72 útiles con la macro
+`challenge(key, type)`; el resto (modos SWARM/ARAM, duplicados de
+`stg_participants`, contadores de equipo) queda en raw por si hace falta.
+NULL = la clave no vino ("no aplica": campos de jungla en un laner), no cero.
+Los conteos absolutos dependen de campeón y rivales: normalizar antes de
+comparar jugadores. Un campo nuevo en el parser se rellena hacia atrás con
+`python -m dlt_pipeline.backfill_participants` (re-baja el detalle, ~1 request
+por partida, merge idempotente).
+
 ### `lane_minions_first_10min` no es un ratio
 
 Se llamaba `cs_per_minute` en raw, lo que invitaba a leerla como un ratio y a

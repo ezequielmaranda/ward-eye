@@ -1,14 +1,13 @@
 """
-Backfill puntual: agrega `participant_id` a las filas de raw_participants ya
-cargadas antes de que el extractor lo capturara.
+Backfill de raw_participants: re-descarga el detalle de cada partida ya
+presente en raw_matches y vuelve a cargar raw_participants con merge
+(primary_key match_id+puuid). Actualiza in-place las filas existentes, así que
+sirve cada vez que parse_participants() empieza a capturar una columna nueva.
+No toca raw_matches ni los timelines. Idempotente.
 
-Re-descarga el detalle de cada partida ya presente en raw_matches (vía la
-Riot API) y vuelve a cargar raw_participants con merge (primary_key
-match_id+puuid), lo que actualiza in-place las filas existentes agregando el
-participant_id real. No toca raw_matches ni los timelines.
+Usos hasta ahora: `participant_id` y `challenges_json`.
 
-Correr una sola vez:
-  python -m dlt_pipeline.backfill_participant_id
+  python -m dlt_pipeline.backfill_participants
 """
 
 import logging
@@ -48,7 +47,7 @@ def run_backfill():
     finally:
         conn.close()
 
-    logger.info(f"Partidas a re-procesar para backfill de participant_id: {len(match_ids)}")
+    logger.info(f"Partidas a re-procesar (backfill de raw_participants): {len(match_ids)}")
 
     client = RiotClient(api_key=RIOT_API_KEY, platform=RIOT_REGION, routing=RIOT_ROUTING)
     puuid = client.get_puuid(SUMMONER_NAME, SUMMONER_TAG)

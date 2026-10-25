@@ -97,7 +97,13 @@ def matches_resource(client: RiotClient, puuid: str, match_ids: list[str]):
     # aunque una corrida no traiga partidas nuevas. Reemplaza a `cs_per_minute`,
     # que era el mismo dato con un nombre que mentía (ver transformers.py y
     # scripts/migrate_lane_minions_rename.py).
-    columns={"lane_minions_first_10min": {"data_type": "bigint", "nullable": True}},
+    # challenges_json: el objeto entero serializado, tipado recién en dbt
+    # (stg_challenges). Si se pasara el dict, dlt lo aplanaría en ~130 columnas
+    # que cambian entre versiones.
+    columns={
+        "lane_minions_first_10min": {"data_type": "bigint", "nullable": True},
+        "challenges_json": {"data_type": "text", "nullable": True},
+    },
 )
 def participants_resource(client: RiotClient, puuid: str, match_ids: list[str]):
     for match_id in match_ids:
