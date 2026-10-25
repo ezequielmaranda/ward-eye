@@ -8,6 +8,10 @@ model-paths: ["models"]
 target-path: "target"
 clean-targets: ["target"]
 
+vars:
+  # Huso para game_date / week_start. Igual a TIMEZONE en flows/daily_pipeline.py.
+  game_timezone: America/Argentina/Buenos_Aires
+
 models:
   ward_eye:
     staging:
