@@ -204,6 +204,20 @@ completar**; la cobertura crece a medida que se juega.
   (`*_gap` positivo = el rival era más alto), `lobby_difficulty` (±150) y una
   heurística gruesa de smurf (`games_before < 60` y winrate ≥ 65%).
 
+### Crawl por tier (`lol_crawl`)
+
+`dlt_pipeline/crawl.py` muestrea jugadores al azar por tier/división
+(League-V4) y baja sus últimas 10 ranked de los 30 días previos al muestreo,
+para comparar elos. Pipeline dlt **aparte** (`pipeline_name="lol_crawl"`,
+dataset `lol_crawl`): nunca reusar `lol_coach` para esto, que restaura su
+propio destino y escribiría en `lol_raw`. Estado retomable desde las propias
+tablas (`crawl_seeds.listed_at`, `crawl_seed_matches` vs `crawl_matches`).
+Usa `RiotClient(memoize=False, min_interval=1.25)`: sin caché (son miles de
+partidas) y a ritmo sostenido de 100 req/2 min. Timeline recortado: frames
+solo en los hitos 5/10/15/20/25 y eventos de kills/estructuras/objetivos/
+ítems. El tier vale para la semilla, al momento del muestreo; los otros 9 de
+cada partida son aproximación.
+
 ### `challenges`: blob en raw, tipado en staging
 
 `raw_participants.challenges_json` guarda el objeto `challenges` de Match-V5
