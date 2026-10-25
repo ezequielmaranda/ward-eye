@@ -1,0 +1,27 @@
+flowchart LR
+    riot["Riot Games API<br/>Account · Summoner · League · Match-V5"]
+
+    subgraph py["Python (raíz del repo)"]
+        ext["extraction/<br/>riot_client.py + transformers.py"]
+        dlt["dlt_pipeline/pipeline.py<br/>carga incremental, merge"]
+        dbt["dbt/<br/>staging → intermediate → marts"]
+        prefect["flows/daily_pipeline.py<br/>Prefect 3 · 23:00 ART"]
+    end
+
+    db[("warddata.duckdb<br/>archivo único<br/>single-writer")]
+
+    subgraph web["web/ (Next.js 16)"]
+        dash["Dashboard<br/>ECharts"]
+        api["POST /api/coaching<br/>lib/coach.ts"]
+    end
+
+    llm["LLM OpenAI-compatible<br/>Groq · Gemini"]
+
+    riot --> ext --> dlt
+    dlt -- "escribe lol_raw.*" --> db
+    dbt -- "lee lol_raw, escribe<br/>lol_staging / intermediate / marts" --> db
+    prefect -. "1. corre" .-> dlt
+    prefect -. "2. corre (run + test)" .-> dbt
+    db -- "READ_ONLY por request<br/>solo lol_marts.*" --> dash
+    db -- "READ_ONLY" --> api
+    api --> llm

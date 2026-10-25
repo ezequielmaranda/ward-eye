@@ -1,0 +1,22 @@
+sequenceDiagram
+    autonumber
+    participant P as Prefect flow
+    participant D as dlt
+    participant DB as warddata.duckdb
+    participant R as Riot API
+    participant T as dbt
+
+    P->>D: run_dlt_pipeline()
+    D->>DB: READ_ONLY: max(game_start_ts) + match_id cargados
+    DB-->>D: cursor + set de IDs
+    D->>R: get_match_ids(startTime=cursor) paginado
+    R-->>D: IDs → diff contra los cargados (máx 100)
+    loop por partida nueva (memoizado)
+        D->>R: get_match + get_match_timeline
+        D->>R: get_ranked_info de los 10 (si terminó hace ≤36h)
+    end
+    D->>DB: merge en lol_raw.*
+    P->>T: dbt run + dbt test (subprocess vía python)
+    T->>DB: reconstruye staging / intermediate / marts
+    P->>DB: READ_ONLY: partidas de hoy (mart_match_performance)
+    Note over P: generate_coaching_report() es un placeholder:<br/>el coaching real se pide desde la web

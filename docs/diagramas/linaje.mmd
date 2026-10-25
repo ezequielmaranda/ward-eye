@@ -1,0 +1,61 @@
+flowchart LR
+    subgraph raw["lol_raw — dlt"]
+        r_m[raw_matches]
+        r_p[raw_participants]
+        r_tf[raw_timeline_frames]
+        r_te[raw_timeline_events]
+        r_s[raw_summoners]
+        r_rs[raw_player_rank_snapshots]
+    end
+
+    subgraph stg["lol_staging — vistas"]
+        s_m[stg_matches]
+        s_p[stg_participants]
+        s_tf[stg_timeline_frames]
+        s_te[stg_timeline_events]
+        s_rs[stg_player_rank_snapshots]
+    end
+
+    subgraph int["lol_intermediate — tablas"]
+        i_fs[int_frame_snapshots]
+    end
+
+    subgraph marts["lol_marts — tablas"]
+        m_mp[mart_match_performance]
+        m_cs[mart_champion_stats]
+        m_pt[mart_player_trends]
+        m_eg[mart_early_game]
+        m_jm[mart_jungle_matchup]
+        m_oc[mart_objective_control]
+        m_rc[mart_match_rank_context]
+    end
+
+    webapp(["web/ dashboard + coaching"])
+
+    r_m --> s_m
+    r_p --> s_p
+    s_m --> s_p
+    r_tf --> s_tf
+    r_te --> s_te
+    r_rs --> s_rs
+    s_m --> s_rs
+    s_p --> s_rs
+
+    s_tf --> i_fs
+
+    s_m --> m_mp
+    s_p --> m_mp
+    m_mp --> m_cs
+    m_mp --> m_pt
+    s_p --> m_eg
+    i_fs --> m_eg
+    s_te --> m_eg
+    s_p --> m_jm
+    i_fs --> m_jm
+    s_te --> m_jm
+    s_p --> m_oc
+    s_te --> m_oc
+    s_rs --> m_rc
+    s_p --> m_rc
+
+    marts --> webapp
