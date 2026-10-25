@@ -1,0 +1,21 @@
+# API + UI + scheduler de Prefect (SQLite en ~/.prefect/prefect.db).
+# Sin esto `serve` registra el deployment pero nunca dispara el schedule:
+# el servidor efímero no corre el scheduler.
+#
+# Instalación: ver docs/RASPBERRY.md (reemplazar __USER__ y __REPO__).
+
+[Unit]
+Description=Prefect server (ward-eye)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=__USER__
+WorkingDirectory=__REPO__
+# 0.0.0.0 para abrir la UI desde otra máquina de la LAN (http://<ip-pi>:4200).
+ExecStart=__REPO__/.venv/bin/prefect server start --host 0.0.0.0 --port 4200
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

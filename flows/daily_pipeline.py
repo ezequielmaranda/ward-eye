@@ -3,17 +3,19 @@ ward-eye — Prefect flow principal
 Corre una vez por día, orquesta:
   1. dlt  → extrae partidas nuevas de Riot API y las carga en DuckDB (archivo local)
   2. dbt  → transforma raw → staging → marts
-  3. Claude API → genera el coaching report de las partidas del día
+  3. Partidas del día → placeholder de coaching (el coaching real vive en web/)
 
-Schedule por defecto: 23:00 hora local todos los días.
-Puede dispararse manualmente con: python -m flows.daily_pipeline
+Schedule: 23:00 ART todos los días.
+  python -m flows.daily_pipeline         # una corrida inmediata
+  python -m flows.daily_pipeline serve   # proceso long-running con el schedule
 """
 
 import os
 import sys
 import subprocess
 from pathlib import Path
-from datetime import datetime, timezone
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 from prefect import flow, task, get_run_logger
@@ -28,6 +30,11 @@ DBT_PROFILES_DIR = DBT_DIR   # profiles.yml está dentro de dbt/
 
 # Archivo DuckDB local compartido por dlt, dbt y la web (override con DUCKDB_PATH).
 DUCKDB_PATH = os.environ.get("DUCKDB_PATH", str(ROOT_DIR / "warddata.duckdb"))
+
+# Huso del schedule y de "hoy". Explícito para no depender del reloj del host:
+# una Raspberry suele venir en UTC, y a las 23:00 ART en UTC ya es mañana.
+# Tiene que coincidir con la var `game_timezone` de dbt (dbt_project.yml).
+TIMEZONE = "America/Argentina/Buenos_Aires"
 
 
 # ---------------------------------------------------------------------------
@@ -119,7 +126,7 @@ def get_todays_match_ids() -> list[str]:
     import duckdb
 
     logger = get_run_logger()
-    today = datetime.now(timezone.utc).date()
+    today = datetime.now(ZoneInfo(TIMEZONE)).date()
 
     conn = duckdb.connect(DUCKDB_PATH, read_only=True)
     try:
@@ -194,28 +201,24 @@ def daily_pipeline():
 # Deployment con schedule
 # ---------------------------------------------------------------------------
 
-def deploy():
+def serve():
     """
-    Crea el deployment con schedule diario a las 23:00.
-    Correr una sola vez para registrar el flow en Prefect:
-        python -m flows.daily_pipeline deploy
+    Registra el deployment con el schedule diario y queda corriendo: el propio
+    proceso dispara las corridas, sin work pool ni worker aparte. Necesita una
+    API de Prefect (PREFECT_API_URL → `prefect server start` o Prefect Cloud).
+    En la Raspberry lo levanta systemd (ver deploy/ y docs/RASPBERRY.md):
+        python -m flows.daily_pipeline serve
     """
-    from prefect.deployments import Deployment
-
-    deployment = Deployment.build_from_flow(
-        flow=daily_pipeline,
+    daily_pipeline.serve(
         name="ward-eye-daily-23h",
-        schedule=Cron("0 23 * * *", timezone="America/Argentina/Buenos_Aires"),
-        work_queue_name="default",
+        schedule=Cron("0 23 * * *", timezone=TIMEZONE),
     )
-    deployment.apply()
-    print("Deployment registrado: ward-eye-daily-23h (23:00 ART)")
 
 
 if __name__ == "__main__":
     import sys
-    if len(sys.argv) > 1 and sys.argv[1] == "deploy":
-        deploy()
+    if len(sys.argv) > 1 and sys.argv[1] == "serve":
+        serve()
     else:
         # Ejecución manual inmediata
         daily_pipeline()

@@ -10,7 +10,7 @@ with base as (
 
 weekly as (
     select
-        date_trunc('week', game_start_at)::date     as week_start,
+        date_trunc('week', game_date)::date         as week_start,
         queue_id,
 
         count(*)                                    as games,

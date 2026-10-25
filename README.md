@@ -162,11 +162,14 @@ Corre dlt → dbt → coaching en orden, con reintentos y logging de Prefect:
 python -m flows.daily_pipeline
 ```
 
-Para registrar el schedule diario (23:00 ART) una sola vez:
+Para dejarlo corriendo con el schedule diario (23:00 ART), en un proceso
+long-running que necesita un `prefect server start` aparte:
 
 ```bash
-python -m flows.daily_pipeline deploy
+python -m flows.daily_pipeline serve
 ```
+
+Setup completo como servicio (Raspberry Pi + systemd): [`docs/RASPBERRY.md`](docs/RASPBERRY.md).
 
 ### Dashboard web
 

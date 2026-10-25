@@ -35,8 +35,8 @@ python -m dlt_pipeline.pipeline
 # invocar vía python (el flow de Prefect ya lo hace internamente)
 cd dbt && python -m dbt.cli.main run --profiles-dir . && python -m dbt.cli.main test --profiles-dir .
 
-# Registrar schedule en Prefect (una sola vez)
-python -m flows.daily_pipeline deploy
+# Schedule 23:00 ART: proceso long-running (flow.serve), necesita `prefect server start`
+python -m flows.daily_pipeline serve      # en la Raspberry lo levanta systemd: docs/RASPBERRY.md
 
 # Dashboard web (coaching real)
 cd web && npm install && npm run dev   # http://localhost:3000
@@ -128,7 +128,16 @@ run_dlt_pipeline()
             └─► get_todays_match_ids()   (wait_for dbt — DuckDB es single-writer)
                     └─► generate_coaching_report()   (placeholder — no genera coaching)
 ```
-`get_todays_match_ids()` consulta `lol_marts.mart_match_performance` filtrando por `game_date = today`. **Importante**: espera a `run_dbt` (no solo a `dlt`) porque DuckDB no permite leer el archivo mientras dbt lo está escribiendo. `generate_coaching_report()` solo loguea los match_ids del día; el coaching real vive en `web/` (ver más abajo).
+`get_todays_match_ids()` consulta `lol_marts.mart_match_performance` filtrando por `game_date = today` (hoy en ART). **Importante**: espera a `run_dbt` (no solo a `dlt`) porque DuckDB no permite leer el archivo mientras dbt lo está escribiendo. `generate_coaching_report()` solo loguea los match_ids del día; el coaching real vive en `web/` (ver más abajo).
+
+### Huso horario: fijado a ART, no al host
+El schedule (`Cron(..., timezone=TIMEZONE)`), el "hoy" del flow y `game_date` /
+`week_start` en dbt (var `game_timezone` en `dbt_project.yml`) usan
+`America/Argentina/Buenos_Aires` explícito. Antes `game_date` heredaba el
+TimeZone de la sesión DuckDB (= el del host) y el flow usaba la fecha UTC, que a
+las 23:00 ART ya es mañana → nunca encontraba partidas del día. En una Raspberry
+en UTC eso además corría los días. Si se cambia el huso, cambiarlo en los dos
+lugares.
 
 ### DuckDB — concurrencia (single-writer)
 Un archivo `.duckdb` admite **un solo proceso escritor** a la vez; varios lectores solo conviven entre sí (no con un escritor). Implicancias:

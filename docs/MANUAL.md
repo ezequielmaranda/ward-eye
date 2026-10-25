@@ -1,7 +1,8 @@
 # ward-eye — manual para volver al proyecto
 
 Leé esto cuando vuelvas después de un tiempo. Diagramas en
-[`diagrama.md`](diagrama.md). El detalle fino (por qué se decidió cada cosa)
+[`diagrama.md`](diagrama.md); correrlo desatendido en la Pi en
+[`RASPBERRY.md`](RASPBERRY.md). El detalle fino (por qué se decidió cada cosa)
 está en [`../CLAUDE.md`](../CLAUDE.md) y [`../web/CLAUDE.md`](../web/CLAUDE.md).
 
 ---
@@ -50,8 +51,8 @@ Todo es local: no hay servidor de base de datos. El "warehouse" es el archivo
 | `dlt_pipeline/pipeline.py` | El pipeline dlt: recursos, estado incremental y `run_pipeline()`. |
 | `dlt_pipeline/backfill_participant_id.py` | Backfill histórico que se corrió una sola vez. No hace falta volver a correrlo. |
 | `dbt/` | Proyecto dbt (`ward_eye`): `models/staging`, `models/intermediate`, `models/marts`, `tests/`, `macros/`. |
-| `flows/daily_pipeline.py` | Flow de Prefect: dlt → dbt → partidas del día → placeholder de coaching. |
-| `flows/fetch_player_ranks.py` | Script viejo y manual que escribe `lol_raw.raw_player_ranks`. Lo reemplazó el recurso dlt de snapshots de rango (ver §4). |
+| `flows/daily_pipeline.py` | Flow de Prefect: dlt → dbt → partidas del día → placeholder de coaching. `serve` lo deja corriendo con el schedule. |
+| `deploy/*.service` | Units de systemd para la Raspberry (Prefect server + `serve`). Ver [`RASPBERRY.md`](RASPBERRY.md). |
 | `scripts/migrate_*.py` | Migraciones de datos que ya se aplicaron. Son idempotentes. |
 | `web/` | Dashboard Next.js 16 + coaching. Tiene su propio `README.md` y `CLAUDE.md`. |
 | `main.py` | Hello world del template de `uv`. No se usa. |
@@ -80,9 +81,8 @@ dlt escribe **todo en el schema `lol_raw`** (`dataset_name="lol_raw"`,
 - `lol_raw._dlt_loads`, `_dlt_pipeline_state`, `_dlt_version`: metadata de
   dlt (cargas, estado, schema guardado).
 - Schema **`lol_raw_staging`**: tablas temporales que dlt usa para el
-  delete-insert del merge. Es normal que exista y no lo lee nadie.
-- `lol_raw.raw_player_ranks`: la escribió el script viejo
-  `flows/fetch_player_ranks.py`, no dlt. dbt no la usa.
+  delete-insert del merge. Es normal que exista y no lo lee nadie. Si lo
+  borrás, dlt lo recrea en la próxima carga.
 
 ### Cómo decide qué bajar
 
@@ -127,13 +127,17 @@ eso los schemas se llaman `lol_staging` y no `main_lol_staging`.
 | `models/marts` | `lol_marts` | table |
 
 Fuente: `sources.yml` declara las 6 tablas de `lol_raw` (todas menos las
-internas y `raw_player_ranks`).
+internas `_dlt_*`).
+
+Var `game_timezone` (en `dbt_project.yml`): huso con el que se calculan
+`game_date` y `week_start`. Fijado a ART para no depender del host; tiene
+que coincidir con `TIMEZONE` en `flows/daily_pipeline.py`.
 
 ### Staging (`lol_staging`, vistas)
 
 | Modelo | Qué hace |
 |---|---|
-| `stg_matches` | Timestamps, duración en minutos, nombre de cola. **Descarta remakes (<5 min).** |
+| `stg_matches` | Timestamps, `game_date` en ART, duración en minutos, nombre de cola. **Descarta remakes (<5 min).** |
 | `stg_participants` | Métricas por minuto (cs/min, vision/min, damage/min). Hereda el filtro de remakes vía `stg_matches`. |
 | `stg_timeline_frames` | CS total y fase de juego por frame. |
 | `stg_timeline_events` | Limpieza liviana, más **`is_real_ward`**, el filtro canónico de wards reales (`WARD_PLACED` incluye cajas de Shaco, hongos de Teemo, etc.). |
@@ -224,8 +228,8 @@ python -m dbt.cli.main run  --profiles-dir .
 python -m dbt.cli.main test --profiles-dir .
 python -m dbt.cli.main run  --profiles-dir . --select mart_jungle_matchup+   # un modelo y sus hijos
 
-# Registrar el schedule de Prefect (una vez)
-python -m flows.daily_pipeline deploy
+# Dejarlo corriendo con el schedule 23:00 ART (necesita `prefect server start`)
+python -m flows.daily_pipeline serve
 
 # Web
 cd web && npm install && npm run dev
@@ -259,7 +263,7 @@ redundantes.
   subestimados).
 - `lane_minions_first_10min` es un **conteo** (0-5 para jungla), no un ratio.
   Antes se llamaba `cs_per_minute`.
-- `flows/fetch_player_ranks.py` y `lol_raw.raw_player_ranks` quedaron
-  obsoletos. Se pueden borrar cuando quieras.
-- `deploy()` usa `Deployment.build_from_flow`, una API de Prefect 2. Si el
-  `deploy` falla con Prefect 3, migralo a `flow.serve(...)` / `flow.deploy(...)`.
+- **La dev key de Riot vence cada 24 h**: para correr desatendido (Pi) hace
+  falta una Personal API Key. Ver [`RASPBERRY.md`](RASPBERRY.md).
+- `mart_player_trends.top_champion` es no determinístico cuando hay empate de
+  partidas entre campeones en la semana: puede cambiar entre corridas de dbt.

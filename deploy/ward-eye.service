@@ -1,0 +1,24 @@
+# Proceso long-running de `flow.serve()`: registra el deployment
+# ward-eye-daily/ward-eye-daily-23h (23:00 ART) y ejecuta las corridas.
+# Las variables del pipeline (RIOT_API_KEY, etc.) salen del .env del repo.
+#
+# Instalación: ver docs/RASPBERRY.md (reemplazar __USER__ y __REPO__).
+
+[Unit]
+Description=ward-eye daily pipeline (Prefect serve)
+After=prefect-server.service network-online.target
+Requires=prefect-server.service
+Wants=network-online.target
+
+[Service]
+User=__USER__
+WorkingDirectory=__REPO__
+Environment=PREFECT_API_URL=http://127.0.0.1:4200/api
+ExecStart=__REPO__/.venv/bin/python -m flows.daily_pipeline serve
+# El server tarda unos segundos en levantar: si serve arranca antes y no
+# conecta, systemd lo reintenta.
+Restart=always
+RestartSec=15
+
+[Install]
+WantedBy=multi-user.target

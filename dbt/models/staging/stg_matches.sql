@@ -23,7 +23,10 @@ select
 
     -- Timestamps (Riot devuelve ms)
     to_timestamp(game_start_ts / 1000.0)                as game_start_at,
-    to_timestamp(game_start_ts / 1000.0)::date          as game_date,
+    -- El día calendario depende del huso: explícito para no heredar el TimeZone
+    -- de la sesión DuckDB (= el del host, y una Raspberry suele estar en UTC).
+    timezone('{{ var("game_timezone") }}', to_timestamp(game_start_ts / 1000.0))::date
+                                                        as game_date,
     to_timestamp(game_end_ts   / 1000.0)                as game_end_at,
 
     -- Nombre legible de la cola
