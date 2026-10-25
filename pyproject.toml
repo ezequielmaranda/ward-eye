@@ -16,3 +16,14 @@ dependencies = [
     "requests>=2.31.0",
     "ruff>=0.15.21",
 ]
+
+[dependency-groups]
+analysis = [
+    "jupyter>=1.1.1",
+    "matplotlib>=3.11.2",
+    "nbconvert>=7.17.2",
+    "scikit-learn>=1.9.1",
+    "scipy>=1.18.1",
+    "seaborn>=0.13.2",
+    "statsmodels>=0.15.0",
+]

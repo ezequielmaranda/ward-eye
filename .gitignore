@@ -20,3 +20,6 @@ dbt/dbt_packages/
 dbt/logs/
 dbt/dbt_modules/
 dbt/profiles.yml
+
+# Análisis (cache de Data Dragon)
+analysis/.cache/
