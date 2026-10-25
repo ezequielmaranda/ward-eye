@@ -55,6 +55,7 @@ Todo es local: no hay servidor de base de datos. El "warehouse" es el archivo
 | `deploy/*.service` | Units de systemd para la Raspberry (Prefect server + `serve`). Ver [`RASPBERRY.md`](RASPBERRY.md). |
 | `scripts/migrate_*.py` | Migraciones de datos que ya se aplicaron. Son idempotentes. |
 | `web/` | Dashboard Next.js 16 + coaching. Tiene su propio `README.md` y `CLAUDE.md`. |
+| `analysis/` | EDA de factores de victoria: `eda_factores_victoria.ipynb` y `data.py`, que arma los datasets. Las dependencias van en un grupo aparte: `uv sync --group analysis`. |
 | `main.py` | Hello world del template de `uv`. No se usa. |
 
 ---
@@ -119,6 +120,9 @@ Proyecto `ward_eye`, perfil en `dbt/profiles.yml` (gitignored) apuntando al
 mismo `warddata.duckdb`. La macro `generate_schema_name` hace que el
 `+schema` de cada carpeta se use **tal cual**, sin prefijo del target. Por
 eso los schemas se llaman `lol_staging` y no `main_lol_staging`.
+
+Es la arquitectura *medallion* con otros nombres: `lol_raw` = bronce,
+`lol_staging` + `lol_intermediate` = plata, `lol_marts` = oro.
 
 | Carpeta | Schema | Materialización |
 |---|---|---|
