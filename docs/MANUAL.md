@@ -131,10 +131,26 @@ archivo. No toca `lol_raw` ni tus marts.
 | `crawl_events` | 1 por evento | Kills, estructuras, objetivos y compras de ítems. Sin wards ni subidas de nivel/skill: la visión sale de `challenges`. `merge_key=match_id`, igual que `raw_timeline_events`. |
 | `crawl_failed_matches` | 1 por partida | Partidas que la API no devolvió. Se registran para no reintentarlas siempre. |
 
+#### `sample` y `run`: dos pasos distintos
+
+| | `sample` | `run` |
+|---|---|---|
+| Qué hace | Elige **a quién** seguir: pide al azar listas de jugadores de cada tier y división y guarda los candidatos en `crawl_seeds`. | Hace **el trabajo pesado**: pide el historial de cada candidato hasta completar el cupo de activos de cada división, y baja las partidas pendientes. |
+| Baja partidas | No | Sí (2 requests por partida) |
+| Duración | ~10–15 min para los 10 tiers | ~8 h para la muestra completa |
+| Cuántas veces | **Una vez por muestra** (p. ej. una por mes) | Las que hagan falta hasta que no quede nada pendiente |
+| Si lo repetís | Agrega candidatos nuevos a la misma muestra (`--run`) o crea otra: **no lo repitas** para retomar | Retoma donde quedó; si no queda nada, no hace nada |
+| Parámetros | `--players-per-tier` (cupo de semillas activas por tier), `--tiers`, `--run` (etiqueta, default el mes), `--seed` (aleatoriedad reproducible) | `--budget-minutes`: deja de empezar lotes nuevos al cumplirse (se puede pasar hasta ~8 min, un lote) |
+
+Muestra mensual completa:
+
 ```bash
-python -m dlt_pipeline.crawl sample --players-per-tier 120     # los 10 tiers, run = mes actual
-python -m dlt_pipeline.crawl run --budget-minutes 360           # lista y baja lo pendiente
+python -m dlt_pipeline.crawl sample --players-per-tier 120     # una vez: los 10 tiers, run = mes actual
+python -m dlt_pipeline.crawl run --budget-minutes 600           # ~8 h; si no termina, repetir SOLO este
 ```
+
+Antes de dejarlo corriendo de noche: que la PC no se suspenda (el proceso se
+frena) y no usar el dashboard mientras carga (DuckDB tiene un solo escritor).
 
 - **Se puede retomar.** El estado sale de las tablas: semillas sin `listed_at` y
   partidas listadas que no están cargadas. Cada lote (50 semillas o 200
