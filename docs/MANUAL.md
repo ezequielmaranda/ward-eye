@@ -49,6 +49,7 @@ Todo es local: no hay servidor de base de datos. El "warehouse" es el archivo
 | `extraction/riot_client.py` | Cliente HTTP de Riot. Rate limit, reintentos y memoización de `get_match` / `get_match_timeline`. |
 | `extraction/transformers.py` | Parsers: JSON de la API → filas planas (`parse_match`, `parse_participants`, `parse_timeline_*`, `parse_summoner`). |
 | `dlt_pipeline/pipeline.py` | El pipeline dlt: recursos, estado incremental y `run_pipeline()`. |
+| `dlt_pipeline/crawl.py` | Crawl de partidas de otros jugadores muestreados por tier (schema `lol_crawl`). Ver §4. |
 | `dlt_pipeline/backfill_participants.py` | Re-baja el detalle de todas las partidas cargadas y re-carga `raw_participants` con merge. Se usa cuando el parser empieza a capturar una columna nueva (ya se usó para `participant_id` y `challenges_json`). |
 | `dbt/` | Proyecto dbt (`ward_eye`): `models/staging`, `models/intermediate`, `models/marts`, `tests/`, `macros/`. |
 | `flows/daily_pipeline.py` | Flow de Prefect: dlt → dbt → partidas del día → placeholder de coaching. `serve` lo deja corriendo con el schedule. |
@@ -113,6 +114,61 @@ dlt escribe **todo en el schema `lol_raw`** (`dataset_name="lol_raw"`,
   eventos. Se aceptó así, sin re-ingesta.
 
 ---
+
+### Crawl por tier (`lol_crawl`)
+
+Partidas de **otros** jugadores, muestreados al azar por tier, para comparar
+cómo se juega en cada elo. Es un pipeline dlt aparte (`dlt_pipeline/crawl.py`,
+`pipeline_name="lol_crawl"`) que escribe en el schema `lol_crawl` del mismo
+archivo. No toca `lol_raw` ni tus marts.
+
+| Tabla | Grano | Qué es |
+|---|---|---|
+| `crawl_seeds` | corrida × jugador | Jugadores muestreados, con su tier, división, LP y W/L **al momento del muestreo**. `run` etiqueta la muestra (default: el mes). `listed_at` NULL = falta pedir su historial. `n_matches_in_window` = cuántas ranked jugó en los 30 días (actividad, sin tope). |
+| `crawl_seed_matches` | corrida × jugador × partida | **Todas** las ranked de cada semilla en los 30 días previos al muestreo, con `window_rank` (0 = la más reciente). Solo se bajan las de `window_rank < 10`; como son consecutivas, el tiempo entre ellas es el tiempo real entre partidas. |
+| `crawl_matches` / `crawl_participants` | partida / 10 por partida | Igual que en `lol_raw`, con `challenges_json` y sin `is_me` / `my_puuid`. |
+| `crawl_frames` | participante × hito | Solo los frames de los minutos 5/10/15/20/25. |
+| `crawl_events` | 1 por evento | Kills, estructuras, objetivos y compras de ítems. Sin wards ni subidas de nivel/skill: la visión sale de `challenges`. `merge_key=match_id`, igual que `raw_timeline_events`. |
+| `crawl_failed_matches` | 1 por partida | Partidas que la API no devolvió. Se registran para no reintentarlas siempre. |
+
+#### `sample` y `run`: dos pasos distintos
+
+| | `sample` | `run` |
+|---|---|---|
+| Qué hace | Elige **a quién** seguir: pide al azar listas de jugadores de cada tier y división y guarda los candidatos en `crawl_seeds`. | Hace **el trabajo pesado**: pide el historial de cada candidato hasta completar el cupo de activos de cada división, y baja las partidas pendientes. |
+| Baja partidas | No | Sí (2 requests por partida) |
+| Duración | ~10–15 min para los 10 tiers | ~8 h para la muestra completa |
+| Cuántas veces | **Una vez por muestra** (p. ej. una por mes) | Las que hagan falta hasta que no quede nada pendiente |
+| Si lo repetís | Agrega candidatos nuevos a la misma muestra (`--run`) o crea otra: **no lo repitas** para retomar | Retoma donde quedó; si no queda nada, no hace nada |
+| Parámetros | `--players-per-tier` (cupo de semillas activas por tier), `--tiers`, `--run` (etiqueta, default el mes), `--seed` (aleatoriedad reproducible) | `--budget-minutes`: deja de empezar lotes nuevos al cumplirse (se puede pasar hasta ~8 min, un lote) |
+
+Muestra mensual completa:
+
+```bash
+python -m dlt_pipeline.crawl sample --players-per-tier 120     # una vez: los 10 tiers, run = mes actual
+python -m dlt_pipeline.crawl run --budget-minutes 600           # ~8 h; si no termina, repetir SOLO este
+```
+
+Antes de dejarlo corriendo de noche: que la PC no se suspenda (el proceso se
+frena) y no usar el dashboard mientras carga (DuckDB tiene un solo escritor).
+
+- **Se puede retomar.** El estado sale de las tablas: semillas sin `listed_at` y
+  partidas listadas que no están cargadas. Cada lote (50 semillas o 200
+  partidas) se carga apenas termina; si se corta, se pierde como mucho el lote
+  en curso.
+- **El presupuesto se chequea entre lotes**, así que una corrida puede pasarse
+  hasta ~8 min (un lote de partidas).
+- **Ritmo fijo:** 1 request cada 1,25 s (≈ 2.900/h, el límite de la key sin
+  429). Cada partida cuesta 2 requests.
+- **Candidatos y cupo.** Tener 50+ partidas en la temporada no implica haber
+  jugado en la ventana: en la prueba con Oro, ~40% de los candidatos tenía 0
+  ranked en 30 días. `sample` guarda 3× candidatos por división (`quota`,
+  `candidate_rank`) y `run` los lista en orden aleatorio hasta juntar el cupo
+  de semillas con partidas. Los que sobran quedan con `listed_at` NULL: es
+  normal. Para analizar, filtrá `n_matches_in_window > 0`.
+- **Tus partidas se excluyen** si aparecen en el historial de una semilla.
+- **El tier es el de la semilla al muestrear**, y solo para la semilla. Los
+  otros 9 de la partida tienen un tier aproximado (el matchmaking los junta).
 
 ## 5. dbt: qué schemas y tablas maneja
 
