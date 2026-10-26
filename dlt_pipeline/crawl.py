@@ -69,7 +69,12 @@ APEX_TIERS = {"MASTER", "GRANDMASTER", "CHALLENGER"}
 
 RANKED_SOLO = 420
 WINDOW_DAYS = 30            # partidas de los 30 días previos al muestreo
-MATCHES_PER_SEED = 10
+MATCHES_PER_SEED = 10       # partidas que se bajan por semilla (las más recientes)
+# La lista de IDs se pide completa (páginas de 100, el máximo de la API): da
+# cuántas ranked jugó la semilla en la ventana (actividad por elo), aunque solo
+# se bajen MATCHES_PER_SEED. La mayoría entra en una página; en la prueba con
+# Oro, 2 de 8 semillas pasaban de 100.
+MATCH_IDS_PAGE = 100
 MIN_GAMES = 50              # semillas con historial suficiente en la temporada
 # "≥50 partidas y no inactivo" no implica haber jugado en la ventana: en la
 # prueba con Oro, 10 de 20 semillas tenían 0 ranked en 30 días. Se muestrean 3×
@@ -99,7 +104,7 @@ MIN_INTERVAL_S = 1.25
     # del que inferir el tipo (pending_seeds() filtra por listed_at).
     columns={
         "listed_at": {"data_type": "timestamp", "nullable": True},
-        "n_matches_listed": {"data_type": "bigint", "nullable": True},
+        "n_matches_in_window": {"data_type": "bigint", "nullable": True},
     },
 )
 def seeds_resource(rows: list[dict]):
@@ -187,7 +192,7 @@ def pending_seeds() -> list[dict]:
     rows = _read(f"""
         with g as (
             select run, tier, division,
-                   count(*) filter (where n_matches_listed > 0) as active
+                   count(*) filter (where n_matches_in_window > 0) as active
             from lol_crawl.crawl_seeds group by all
         )
         select {cols}, g.active
@@ -199,13 +204,16 @@ def pending_seeds() -> list[dict]:
 
 
 def pending_match_ids() -> list[str]:
-    """Partidas listadas que todavía no están cargadas ni fallaron."""
+    """Partidas a bajar (las MATCHES_PER_SEED más recientes de cada semilla) que
+    todavía no están cargadas ni fallaron."""
     loaded = {r[0] for r in _read("select match_id from lol_crawl.crawl_matches")}
     failed = {r[0] for r in _read("select match_id from lol_crawl.crawl_failed_matches")}
     mine = {r[0] for r in _read("select match_id from lol_raw.raw_matches")}
-    listed = [r[0] for r in _read(
-        "select match_id from lol_crawl.crawl_seed_matches group by 1 order by min(listed_at), 1"
-    )]
+    listed = [r[0] for r in _read(f"""
+        select match_id from lol_crawl.crawl_seed_matches
+        where window_rank < {MATCHES_PER_SEED}
+        group by 1 order by min(listed_at), 1
+    """)]
     return [m for m in listed if m not in loaded | failed | mine]
 
 
@@ -277,7 +285,7 @@ def sample_seeds(client: RiotClient, tiers: list[str], players_per_tier: int,
                     "quota": per_group,
                     "candidate_rank": rank,
                     "listed_at": None,
-                    "n_matches_listed": None,
+                    "n_matches_in_window": None,
                 })
     return seeds
 
@@ -287,19 +295,31 @@ def sample_seeds(client: RiotClient, tiers: list[str], players_per_tier: int,
 # ---------------------------------------------------------------------------
 
 def list_seed_matches(client: RiotClient, s: dict) -> tuple[dict, list[dict]]:
-    """Últimas MATCHES_PER_SEED ranked de una semilla, en la ventana previa al muestreo."""
+    """
+    Todas las ranked de una semilla en la ventana previa al muestreo, con su
+    posición: window_rank 0 = la más reciente. Solo
+    las MATCHES_PER_SEED primeras se bajan; como son consecutivas en el
+    historial, el tiempo entre ellas es el tiempo real entre partidas.
+    """
     listed_at = datetime.now(timezone.utc)
     sampled_at = s["sampled_at"]
     if sampled_at.tzinfo is None:
         sampled_at = sampled_at.replace(tzinfo=timezone.utc)
     end = int(sampled_at.timestamp())
-    ids = client.get_match_ids(
-        puuid=s["puuid"], queue=RANKED_SOLO, count=MATCHES_PER_SEED,
-        start_time=end - WINDOW_DAYS * 86400, end_time=end,
-    )
-    links = [{"run": s["run"], "puuid": s["puuid"], "match_id": m, "listed_at": listed_at}
-             for m in ids]
-    seed = {c: s[c] for c in SEED_COLS} | {"listed_at": listed_at, "n_matches_listed": len(ids)}
+    ids: list[str] = []
+    while True:   # paginar: en elo alto no es raro pasar de 100 ranked en 30 días
+        page = client.get_match_ids(
+            puuid=s["puuid"], queue=RANKED_SOLO, count=MATCH_IDS_PAGE, start=len(ids),
+            start_time=end - WINDOW_DAYS * 86400, end_time=end,
+        )
+        ids += page
+        if len(page) < MATCH_IDS_PAGE:
+            break
+    links = [{"run": s["run"], "puuid": s["puuid"], "match_id": m,
+              "window_rank": i, "listed_at": listed_at}
+             for i, m in enumerate(ids)]
+    seed = {c: s[c] for c in SEED_COLS} | {"listed_at": listed_at,
+                                           "n_matches_in_window": len(ids)}
     return seed, links
 
 
@@ -386,7 +406,7 @@ def cmd_run(budget_minutes: float) -> None:
         seed, seed_links = list_seed_matches(client, s)
         seed_rows.append(seed)
         links.extend(seed_links)
-        active[group] += seed["n_matches_listed"] > 0
+        active[group] += seed["n_matches_in_window"] > 0
         if len(seed_rows) >= SEED_BATCH:
             flush()
     flush()

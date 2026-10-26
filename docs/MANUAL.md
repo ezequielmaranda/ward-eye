@@ -124,8 +124,8 @@ archivo. No toca `lol_raw` ni tus marts.
 
 | Tabla | Grano | Qué es |
 |---|---|---|
-| `crawl_seeds` | corrida × jugador | Jugadores muestreados, con su tier, división, LP y W/L **al momento del muestreo**. `run` etiqueta la muestra (default: el mes). `listed_at` NULL = falta pedir su historial. |
-| `crawl_seed_matches` | corrida × jugador × partida | Las últimas 10 ranked de cada semilla en los 30 días previos al muestreo. |
+| `crawl_seeds` | corrida × jugador | Jugadores muestreados, con su tier, división, LP y W/L **al momento del muestreo**. `run` etiqueta la muestra (default: el mes). `listed_at` NULL = falta pedir su historial. `n_matches_in_window` = cuántas ranked jugó en los 30 días (actividad, sin tope). |
+| `crawl_seed_matches` | corrida × jugador × partida | **Todas** las ranked de cada semilla en los 30 días previos al muestreo, con `window_rank` (0 = la más reciente). Solo se bajan las de `window_rank < 10`; como son consecutivas, el tiempo entre ellas es el tiempo real entre partidas. |
 | `crawl_matches` / `crawl_participants` | partida / 10 por partida | Igual que en `lol_raw`, con `challenges_json` y sin `is_me` / `my_puuid`. |
 | `crawl_frames` | participante × hito | Solo los frames de los minutos 5/10/15/20/25. |
 | `crawl_events` | 1 por evento | Kills, estructuras, objetivos y compras de ítems. Sin wards ni subidas de nivel/skill: la visión sale de `challenges`. `merge_key=match_id`, igual que `raw_timeline_events`. |
@@ -149,7 +149,7 @@ python -m dlt_pipeline.crawl run --budget-minutes 360           # lista y baja l
   ranked en 30 días. `sample` guarda 3× candidatos por división (`quota`,
   `candidate_rank`) y `run` los lista en orden aleatorio hasta juntar el cupo
   de semillas con partidas. Los que sobran quedan con `listed_at` NULL: es
-  normal. Para analizar, filtrá `n_matches_listed > 0`.
+  normal. Para analizar, filtrá `n_matches_in_window > 0`.
 - **Tus partidas se excluyen** si aparecen en el historial de una semilla.
 - **El tier es el de la semilla al muestrear**, y solo para la semilla. Los
   otros 9 de la partida tienen un tier aproximado (el matchmaking los junta).
