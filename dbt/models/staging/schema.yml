@@ -1,0 +1,17 @@
+version: 2
+
+models:
+  - name: stg_challenges
+    description: >
+      Métricas de `challenges` de Match-V5 tipadas, una fila por jugador por
+      partida. raw guarda el objeto entero (raw_participants.challenges_json);
+      acá van las útiles para análisis. NULL = la clave no vino, que en varias
+      significa "no aplica" (campos de jungla en un laner), no cero.
+    columns:
+      - name: match_id
+        tests: [not_null]
+      - name: puuid
+        tests: [not_null]
+      - name: ability_uses
+        description: Siempre presente; si es NULL, la extracción del JSON se rompió.
+        tests: [not_null]

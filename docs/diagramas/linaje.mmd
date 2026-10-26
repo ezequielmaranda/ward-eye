@@ -14,6 +14,7 @@ flowchart LR
         s_tf[stg_timeline_frames]
         s_te[stg_timeline_events]
         s_rs[stg_player_rank_snapshots]
+        s_ch[stg_challenges]
     end
 
     subgraph int["lol_intermediate — tablas"]
@@ -38,6 +39,8 @@ flowchart LR
     r_tf --> s_tf
     r_te --> s_te
     r_rs --> s_rs
+    r_p --> s_ch
+    s_m --> s_ch
     s_m --> s_rs
     s_p --> s_rs
 

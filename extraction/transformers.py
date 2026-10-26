@@ -109,6 +109,11 @@ def parse_participants(raw: dict, my_puuid: str) -> Generator[dict, None, None]:
             "multikills":            p.get("largestMultiKill", 0),
             "killing_sprees":        p.get("largestKillingSpree", 0),
             "time_ccing_others_s":   p.get("timeCCingOthers", 0),
+            # El objeto challenges completo (~130 métricas, sin documentación
+            # oficial y con claves que Riot agrega o saca entre versiones). Se
+            # guarda entero y se tipa en dbt (stg_challenges): si mañana
+            # importa un campo que hoy no extraemos, ya está en raw.
+            "challenges_json":       json.dumps(challenges),
         }
 
 

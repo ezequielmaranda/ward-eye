@@ -49,7 +49,7 @@ Todo es local: no hay servidor de base de datos. El "warehouse" es el archivo
 | `extraction/riot_client.py` | Cliente HTTP de Riot. Rate limit, reintentos y memoización de `get_match` / `get_match_timeline`. |
 | `extraction/transformers.py` | Parsers: JSON de la API → filas planas (`parse_match`, `parse_participants`, `parse_timeline_*`, `parse_summoner`). |
 | `dlt_pipeline/pipeline.py` | El pipeline dlt: recursos, estado incremental y `run_pipeline()`. |
-| `dlt_pipeline/backfill_participant_id.py` | Backfill histórico que se corrió una sola vez. No hace falta volver a correrlo. |
+| `dlt_pipeline/backfill_participants.py` | Re-baja el detalle de todas las partidas cargadas y re-carga `raw_participants` con merge. Se usa cuando el parser empieza a capturar una columna nueva (ya se usó para `participant_id` y `challenges_json`). |
 | `dbt/` | Proyecto dbt (`ward_eye`): `models/staging`, `models/intermediate`, `models/marts`, `tests/`, `macros/`. |
 | `flows/daily_pipeline.py` | Flow de Prefect: dlt → dbt → partidas del día → placeholder de coaching. `serve` lo deja corriendo con el schedule. |
 | `deploy/*.service` | Units de systemd para la Raspberry (Prefect server + `serve`). Ver [`RASPBERRY.md`](RASPBERRY.md). |
@@ -71,7 +71,7 @@ dlt escribe **todo en el schema `lol_raw`** (`dataset_name="lol_raw"`,
 | Tabla | Grano | Clave de merge | Qué es |
 |---|---|---|---|
 | `raw_matches` | 1 fila por partida | `primary_key=match_id` | Metadata de la partida: cola, duración, `game_start_ts`, resultado. **Es también el cursor incremental.** |
-| `raw_participants` | 10 filas por partida | `primary_key=(match_id, puuid)` | Stats finales de cada jugador. `is_me` marca tu fila. |
+| `raw_participants` | 10 filas por partida | `primary_key=(match_id, puuid)` | Stats finales de cada jugador. `is_me` marca tu fila. `challenges_json` guarda el objeto `challenges` entero (~120-135 métricas sin documentar). |
 | `raw_timeline_frames` | participante × frame (~1/min) | `primary_key=(match_id, participant_id, timestamp_ms)` | Oro, XP, CS y nivel minuto a minuto. |
 | `raw_timeline_events` | 1 fila por evento | **`merge_key=match_id`** | Kills, wards, objetivos, compras, etc. Usa `merge_key` porque un evento no tiene clave natural (`participant_id` es NULL en varios tipos de evento). Re-ingestar una partida borra y reinserta todos sus eventos. |
 | `raw_summoners` | 1 fila (tu cuenta) | `primary_key=puuid` | Nivel y rango actual. Se refresca en **cada** corrida, aunque no haya partidas nuevas. Ningún modelo dbt lo lee. |
@@ -145,6 +145,7 @@ que coincidir con `TIMEZONE` en `flows/daily_pipeline.py`.
 | `stg_participants` | Métricas por minuto (cs/min, vision/min, damage/min). Hereda el filtro de remakes vía `stg_matches`. |
 | `stg_timeline_frames` | CS total y fase de juego por frame. |
 | `stg_timeline_events` | Limpieza liviana, más **`is_real_ward`**, el filtro canónico de wards reales (`WARD_PLACED` incluye cajas de Shaco, hongos de Teemo, etc.). |
+| `stg_challenges` | Las 72 métricas útiles de `challenges_json`, tipadas: mecánica (skillshots, esquives), duelo de línea, jungla (rutas, ganks, robos de objetivos), macro y visión. NULL = no aplica (p. ej. campos de jungla en un laner). Para agregar otra: una línea con la macro `challenge()`. |
 | `stg_player_rank_snapshots` | Corrige wins/losses a "antes de la partida". Tier, división y LP quedan post-partida. Filtrá por `snapshot_is_reliable`. |
 
 ### Intermediate (`lol_intermediate`, tablas)
@@ -176,6 +177,8 @@ solo tiene tu `puuid`.
 | `assert_frame_snapshots_grain` | Que `int_frame_snapshots` no se duplique (un duplicado contaría doble cualquier diferencial). |
 | `assert_frame_snapshots_within_tolerance` | Que ningún snapshot quede a más de 1.5 min de su hito. |
 | `assert_marts_reconcile_with_raw` | Que raw → marts solo pierda remakes y no partidas por un join roto. |
+| `assert_challenges_grain_and_coverage` | Que cada participante tenga exactamente una fila de challenges. Si falla, corré `python -m dlt_pipeline.backfill_participants`. |
+| `assert_challenges_match_participants` | Que la extracción del JSON en dbt coincida con la que hace Python al ingestar (control wards). |
 | `assert_ward_counts_are_plausible` | Que `is_real_ward` siga coincidiendo con `wards_placed` de Match-V5 (tolerancia 3). |
 
 Además están los tests genéricos de los `schema.yml` (unique, not_null, etc.).
